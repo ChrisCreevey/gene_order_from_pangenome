@@ -81,9 +81,12 @@ Output is written to stdout if `--output` is omitted.
 |------|-------|---------|-------------|
 | `--presence-absence` | `-p` | *(required)* | Path to the Roary presence-absence CSV |
 | `--gff-dir` | `-g` | *(required)* | Directory containing the per-genome GFF files |
-| `--output` | `-o` | stdout | Output file path |
+| `--output` | `-o` | stdout | Output file path. With `--strand split`, used as the base name for `.plus` and `.minus` files |
 | `--unknown` | `-u` | `*` | Token written for CDS features not found in the presence-absence table. Pass `skip` to omit them entirely |
 | `--meta-cols` | `-m` | `14` | Number of metadata columns before the genome columns (default matches standard Roary output) |
+| `--contig-sep` | | *(off)* | Token inserted at every contig/scaffold boundary (e.g. `\|`) to indicate genes are on different genome fragments |
+| `--strand` | | *(off)* | `mark`: append `+` or `-` to each gene-family name. `split`: write separate `.plus` and `.minus` output files |
+| `--reverse-minus` | | *(off)* | Reverse minus strand gene order within each contig so genes read 5'→3' along the minus strand (see below) |
 
 ---
 
@@ -102,6 +105,59 @@ ppnP,lptC,ptsN,*,*,ribE,yhcB,fadJ,fadJ,*,mraZ,...
   `--unknown` token (default `*`).
 - Paralogs appear at each of their respective positions in the GFF; for example, two
   copies of `fadJ` will appear twice, at the positions of each copy.
+
+### With `--contig-sep`
+
+A separator token is inserted wherever the sequence ID changes, marking the boundary
+between contigs, scaffolds, or chromosomes:
+
+```
+>1004153.3
+ppnP,lptC,|,ptsN,ribE,yhcB,|,fadJ,fadJ,mraZ,...
+```
+
+The two genes either side of `|` are on different genome fragments and are not physically
+adjacent. The separator appears in all output modes (combined, `mark`, and `split`).
+
+### With `--strand mark`
+
+A `+` or `-` character is appended to each gene-family name to indicate which strand the
+gene is encoded on:
+
+```
+>1004153.3
+ppnP+,lptC-,ptsN+,*+,ribE+,fadJ-,fadJ-,mraZ+,...
+```
+
+### With `--strand split`
+
+Instead of a single combined file, two files are written — one per strand — each
+containing only the genes from that strand in their GFF order. Given
+`--output results.txt`, the output files are:
+
+```
+results.plus.txt   →  genes on the + strand
+results.minus.txt  →  genes on the - strand
+```
+
+Each file uses the same `>genome_name` / comma-separated-list format. Contig separators
+(`--contig-sep`) are included in split files if requested.
+
+### With `--reverse-minus`
+
+GFF files list all genes in reference coordinate order (lowest to highest start position),
+regardless of strand. This means:
+
+- **`+` strand genes** — GFF order already reads 5'→3' ✓
+- **`−` strand genes** — GFF order reads 3'→5', because the gene with the lowest
+  coordinate is at the 3' end of the minus strand ✗
+
+Passing `--reverse-minus` corrects this by reversing the minus strand genes **within
+each contig independently**, so they read 5'→3' along the minus strand while the contigs
+themselves remain in their original order.
+
+This flag affects the minus strand genes in all output modes — the combined file
+(`--strand mark`), the `.minus.txt` split file, or the default combined output.
 
 ---
 
@@ -129,6 +185,44 @@ python gene_order_from_pangenome.py \
 python gene_order_from_pangenome.py \
     -p gene_presence_absence.csv \
     -g gff/ | head -4
+```
+
+**Mark contig boundaries with `|`:**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    --contig-sep '|' \
+    -o gene_order.txt
+```
+
+**Append strand to every gene-family name:**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    --strand mark \
+    -o gene_order_stranded.txt
+```
+
+**Write separate files for each strand:**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    --strand split \
+    -o gene_order.txt
+# produces gene_order.plus.txt and gene_order.minus.txt
+```
+
+**Combine contig boundaries and strand splitting:**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    --contig-sep '|' \
+    --strand split \
+    -o gene_order.txt
 ```
 
 ---
