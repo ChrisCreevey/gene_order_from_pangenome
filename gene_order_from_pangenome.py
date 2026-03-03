@@ -13,6 +13,8 @@ Optional features:
   --reverse-minus  : reverse the gene order within each contig in the minus strand output,
                      so genes read 5'→3' along the minus strand (only meaningful with
                      --strand split or --strand mark)
+  --unmatched FILE : write a TSV report of every CDS in the GFF that has no entry in
+                     the presence-absence file (genome, locus_tag, product, contig, strand)
 
 Usage:
     python gene_order_from_pangenome.py \\
@@ -22,7 +24,8 @@ Usage:
         [--unknown skip|TOKEN] \\
         [--contig-sep |] \\
         [--strand mark|split] \\
-        [--reverse-minus]
+        [--reverse-minus] \\
+        [--unmatched unmatched.tsv]
 """
 
 import csv
@@ -77,10 +80,12 @@ def parse_presence_absence(pa_path, n_meta_cols=14):
 
 def parse_gff_order(gff_path):
     """
-    Parse a GFF3 file and return a list of (locus_tag, seqid, strand) tuples
+    Parse a GFF3 file and return a list of (locus_tag, seqid, strand, product) tuples
     for CDS features in file order.
 
     Uses the 'locus_tag' attribute as the primary identifier, falling back to 'ID'.
+    The 'product' attribute is used as the human-readable description, falling back to
+    'Name', then to an empty string if neither is present.
     Skips duplicate locus_tags to handle genes split across multiple GFF rows.
     Stops reading if a FASTA section (lines starting with '>') is encountered.
     """
@@ -102,9 +107,10 @@ def parse_gff_order(gff_path):
             strand = parts[6]
             attrs = parse_attributes(parts[8])
             locus_tag = attrs.get('locus_tag') or attrs.get('ID', '').split('.')[0]
+            product = attrs.get('product') or attrs.get('Name', '')
             if locus_tag and locus_tag not in seen:
                 seen.add(locus_tag)
-                entries.append((locus_tag, seqid, strand))
+                entries.append((locus_tag, seqid, strand, product))
 
     return entries
 
@@ -120,23 +126,27 @@ def find_gff(gff_dir, genome_name):
 
 def process_genome(entries, gene_lookup, unknown_token, mark_strand, contig_sep):
     """
-    Convert (locus_tag, seqid, strand) entries into gene-family name lists.
+    Convert (locus_tag, seqid, strand, product) entries into gene-family name lists.
 
     Returns:
-        all_genes   (list[str]): All genes in GFF order, with optional strand marks
-                                  and contig separators.
-        plus_genes  (list[str]): Genes on the + strand only, in GFF order.
-        minus_genes (list[str]): Genes on the - strand only, in GFF order.
+        all_genes   (list[str])  : All genes in GFF order, with optional strand marks
+                                   and contig separators.
+        plus_genes  (list[str])  : Genes on the + strand only, in GFF order.
+        minus_genes (list[str])  : Genes on the - strand only, in GFF order.
+        unmatched   (list[dict]) : CDS entries with no gene-family in the PA file.
+                                   Each dict has keys: locus_tag, product, seqid, strand.
 
-    Contig separators (if requested) are inserted into all three lists whenever the
-    sequence ID changes, regardless of strand.
+    Contig separators (if requested) are inserted into all three gene lists whenever the
+    sequence ID changes, regardless of strand. Unmatched genes are always collected,
+    independently of the --unknown token setting.
     """
     all_genes = []
     plus_genes = []
     minus_genes = []
+    unmatched = []
     prev_seqid = None
 
-    for lt, seqid, strand in entries:
+    for lt, seqid, strand, product in entries:
         # Insert contig boundary token when the sequence ID changes
         if contig_sep is not None and prev_seqid is not None and seqid != prev_seqid:
             all_genes.append(contig_sep)
@@ -147,11 +157,17 @@ def process_genome(entries, gene_lookup, unknown_token, mark_strand, contig_sep)
         family = gene_lookup.get(lt)
         if family:
             label = f'{family}{strand}' if mark_strand else family
-        elif unknown_token != 'skip':
-            family = unknown_token
-            label = f'{unknown_token}{strand}' if mark_strand else unknown_token
         else:
-            continue  # omit unknown genes entirely
+            # Always record the unmatched gene for the QC report
+            unmatched.append({
+                'locus_tag': lt,
+                'product':   product,
+                'seqid':     seqid,
+                'strand':    strand,
+            })
+            if unknown_token == 'skip':
+                continue  # omit from gene lists but still recorded above
+            label = f'{unknown_token}{strand}' if mark_strand else unknown_token
 
         all_genes.append(label)
         if strand == '+':
@@ -159,7 +175,7 @@ def process_genome(entries, gene_lookup, unknown_token, mark_strand, contig_sep)
         else:
             minus_genes.append(label)
 
-    return all_genes, plus_genes, minus_genes
+    return all_genes, plus_genes, minus_genes, unmatched
 
 
 def reverse_within_contigs(genes, contig_sep):
@@ -267,6 +283,14 @@ def main():
             'this flag corrects that. Most useful with --strand split or --strand mark.'
         )
     )
+    parser.add_argument(
+        '--unmatched', metavar='FILE',
+        help=(
+            'Write a TSV report of every CDS in the GFF files that has no corresponding '
+            'entry in the presence-absence file. Columns: genome, locus_tag, product, '
+            'contig, strand. Useful for checking what has been excluded from the output.'
+        )
+    )
     args = parser.parse_args()
 
     pa_path = Path(args.presence_absence)
@@ -298,6 +322,15 @@ def main():
         main_fh = open(args.output, 'w', encoding='utf-8') if args.output else sys.stdout
         plus_fh = minus_fh = None
 
+    # Open unmatched report if requested
+    unmatched_fh = None
+    if args.unmatched:
+        unmatched_fh = open(args.unmatched, 'w', encoding='utf-8')
+        unmatched_fh.write('genome\tlocus_tag\tproduct\tcontig\tstrand\n')
+        print(f'Unmatched gene report: {args.unmatched}', file=sys.stderr)
+
+    total_unmatched = 0
+
     try:
         for genome in genome_names:
             gff_path = find_gff(gff_dir, genome)
@@ -307,7 +340,7 @@ def main():
 
             print(f'Processing {genome} ({gff_path.name})', file=sys.stderr)
             entries = parse_gff_order(gff_path)
-            all_genes, plus_genes, minus_genes = process_genome(
+            all_genes, plus_genes, minus_genes, unmatched = process_genome(
                 entries, gene_lookup, args.unknown, mark_strand, args.contig_sep
             )
 
@@ -323,6 +356,15 @@ def main():
                 main_fh.write(f'>{genome}\n')
                 main_fh.write(','.join(all_genes) + '\n')
 
+            # Write unmatched genes for this genome
+            if unmatched_fh:
+                for rec in unmatched:
+                    unmatched_fh.write(
+                        f'{genome}\t{rec["locus_tag"]}\t{rec["product"]}'
+                        f'\t{rec["seqid"]}\t{rec["strand"]}\n'
+                    )
+            total_unmatched += len(unmatched)
+
     finally:
         if main_fh and args.output:
             main_fh.close()
@@ -330,7 +372,12 @@ def main():
             plus_fh.close()
         if minus_fh:
             minus_fh.close()
+        if unmatched_fh:
+            unmatched_fh.close()
 
+    if args.unmatched:
+        print(f'  {total_unmatched} unmatched CDS entries written to {args.unmatched}',
+              file=sys.stderr)
     print('Done.', file=sys.stderr)
 
 

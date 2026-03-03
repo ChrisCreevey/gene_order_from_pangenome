@@ -87,6 +87,7 @@ Output is written to stdout if `--output` is omitted.
 | `--contig-sep` | | *(off)* | Token inserted at every contig/scaffold boundary (e.g. `\|`) to indicate genes are on different genome fragments |
 | `--strand` | | *(off)* | `mark`: append `+` or `-` to each gene-family name. `split`: write separate `.plus` and `.minus` output files |
 | `--reverse-minus` | | *(off)* | Reverse minus strand gene order within each contig so genes read 5'→3' along the minus strand (see below) |
+| `--unmatched` | | *(off)* | Path for a TSV report of every CDS in the GFF with no entry in the presence-absence file |
 
 ---
 
@@ -159,6 +160,22 @@ themselves remain in their original order.
 This flag affects the minus strand genes in all output modes — the combined file
 (`--strand mark`), the `.minus.txt` split file, or the default combined output.
 
+### Unmatched gene report (`--unmatched`)
+
+Any CDS in a GFF file whose `locus_tag` has no entry in the presence-absence table is
+written to a tab-separated report for later inspection. This is independent of the
+`--unknown` setting — genes are recorded even if they are being skipped in the main
+output. The report has five columns:
+
+```
+genome    locus_tag         product                           contig           strand
+1004153.3 BFGHOIAM_00002    hypothetical protein              AFET01000001     +
+1004153.3 BFGHOIAM_00003    hypothetical protein              AFET01000001     +
+1004153.3 BFGHOIAM_00007    putative membrane protein         AFET01000001     -
+```
+
+A summary count of unmatched entries is printed to stderr when the run completes.
+
 ---
 
 ## Examples
@@ -223,6 +240,15 @@ python gene_order_from_pangenome.py \
     --contig-sep '|' \
     --strand split \
     -o gene_order.txt
+```
+
+**Generate an unmatched gene report for QC:**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    -o gene_order.txt \
+    --unmatched unmatched_genes.tsv
 ```
 
 ---
