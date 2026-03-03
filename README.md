@@ -86,7 +86,7 @@ Output is written to stdout if `--output` is omitted.
 | `--meta-cols` | `-m` | `14` | Number of metadata columns before the genome columns (default matches standard Roary output) |
 | `--contig-sep` | | *(off)* | Token inserted at every contig/scaffold boundary (e.g. `\|`) to indicate genes are on different genome fragments |
 | `--strand` | | *(off)* | `mark`: append `+` or `-` to each gene-family name. `split`: write separate `.plus` and `.minus` output files |
-| `--reverse-minus` | | *(off)* | Reverse minus strand gene order within each contig so genes read 5'→3' along the minus strand (see below) |
+| `--reverse-minus` | | *(off)* | Flag (no value required). Reverse minus strand gene order within each contig so genes read 5'→3' along the minus strand (see below) |
 | `--unmatched` | | *(off)* | Path for a TSV report of every CDS in the GFF with no entry in the presence-absence file |
 
 ---
@@ -240,6 +240,17 @@ python gene_order_from_pangenome.py \
     --contig-sep '|' \
     --strand split \
     -o gene_order.txt
+```
+
+**Split by strand and reverse minus strand gene order to read 5'→3':**
+```bash
+python gene_order_from_pangenome.py \
+    -p gene_presence_absence.csv \
+    -g gff/ \
+    --strand split \
+    --reverse-minus \
+    -o gene_order.txt
+# produces gene_order.plus.txt (5'→3') and gene_order.minus.txt (5'→3')
 ```
 
 **Generate an unmatched gene report for QC:**
