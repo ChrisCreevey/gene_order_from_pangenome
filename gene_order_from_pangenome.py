@@ -173,7 +173,11 @@ def process_genome(entries, gene_lookup, unknown_token, mark_strand):
 
 
 def reverse_fragments(fragments):
-    """Reverse gene order within each contig fragment independently (including empties)."""
+    """
+    Reverse gene order within each contig fragment independently.
+
+    Empty fragments are preserved so fragment numbering remains aligned with GFF contig order.
+    """
     return [list(reversed(fragment)) for fragment in fragments]
 
 
@@ -183,6 +187,7 @@ def write_output_sequences(fh, genome, fragments, split_by_fragment):
 
     If split_by_fragment is True, writes one record per fragment named genome.X.
     Otherwise writes one combined record named genome with all fragment genes concatenated.
+    Empty fragments are written as blank sequences to preserve fragment indexing.
     """
     if split_by_fragment:
         for idx, genes in enumerate(fragments, start=1):
@@ -289,7 +294,7 @@ def main():
     mark_strand = args.strand == 'mark'
     split_strand = args.strand == 'split'
     split_by_fragment = args.contig_sep is not None
-    if args.contig_sep not in (None, True):
+    if isinstance(args.contig_sep, str):
         print(
             f'Warning: --contig-sep value "{args.contig_sep}" is ignored; '
             'fragment-level output is controlled by the flag itself.',
