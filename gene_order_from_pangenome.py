@@ -178,16 +178,21 @@ def reverse_fragments(fragments):
 
 
 def write_output_sequences(fh, genome, fragments, split_by_fragment):
-    """Write either one sequence per genome or one sequence per fragment."""
+    """
+    Write output records in FASTA-like format.
+
+    If split_by_fragment is True, writes one record per fragment named genome.X.
+    Otherwise writes one combined record named genome with all fragment genes concatenated.
+    """
     if split_by_fragment:
         for idx, genes in enumerate(fragments, start=1):
             fh.write(f'>{genome}.{idx}\n')
             fh.write(','.join(genes) + '\n')
         return
 
-    combined = [gene for fragment in fragments for gene in fragment]
+    all_genes = [gene for fragment in fragments for gene in fragment]
     fh.write(f'>{genome}\n')
-    fh.write(','.join(combined) + '\n')
+    fh.write(','.join(all_genes) + '\n')
 
 
 def strand_output_paths(base_output):
@@ -283,7 +288,7 @@ def main():
 
     mark_strand = args.strand == 'mark'
     split_strand = args.strand == 'split'
-    fragment_level_output = args.contig_sep is not None
+    split_by_fragment = args.contig_sep is not None
     if args.contig_sep not in (None, True):
         print(
             f'Warning: --contig-sep value "{args.contig_sep}" is ignored; '
@@ -335,10 +340,10 @@ def main():
                 minus_fragments = reverse_fragments(minus_fragments)
 
             if split_strand:
-                write_output_sequences(plus_fh, genome, plus_fragments, fragment_level_output)
-                write_output_sequences(minus_fh, genome, minus_fragments, fragment_level_output)
+                write_output_sequences(plus_fh, genome, plus_fragments, split_by_fragment)
+                write_output_sequences(minus_fh, genome, minus_fragments, split_by_fragment)
             else:
-                write_output_sequences(main_fh, genome, all_fragments, fragment_level_output)
+                write_output_sequences(main_fh, genome, all_fragments, split_by_fragment)
 
             # Write unmatched genes for this genome
             if unmatched_fh:
