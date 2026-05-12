@@ -7,7 +7,7 @@ gene-family names in the order genes appear in the corresponding GFF file. Paral
 copies of a gene family in one genome) are each listed at the position they occupy in the GFF.
 
 Optional features:
-  --contig-sep SEP : insert a separator token wherever the contig/scaffold changes
+  --contig-sep SEP : write each contig/scaffold as a separate output sequence
   --strand mark    : append + or - to each gene-family name to show strand orientation
   --strand split   : write separate .plus and .minus output files instead of a combined file
   --reverse-minus  : reverse the gene order within each contig in the minus strand output,
@@ -124,34 +124,28 @@ def find_gff(gff_dir, genome_name):
     return None
 
 
-def process_genome(entries, gene_lookup, unknown_token, mark_strand, contig_sep):
+def process_genome(entries, gene_lookup, unknown_token, mark_strand):
     """
     Convert (locus_tag, seqid, strand, product) entries into gene-family name lists.
 
     Returns:
-        all_genes   (list[str])  : All genes in GFF order, with optional strand marks
-                                   and contig separators.
-        plus_genes  (list[str])  : Genes on the + strand only, in GFF order.
-        minus_genes (list[str])  : Genes on the - strand only, in GFF order.
+        all_fragments   (list[list[str]]) : All genes in GFF order, split by contig.
+        plus_fragments  (list[list[str]]) : + strand genes in GFF order, split by contig.
+        minus_fragments (list[list[str]]) : - strand genes in GFF order, split by contig.
         unmatched   (list[dict]) : CDS entries with no gene-family in the PA file.
-                                   Each dict has keys: locus_tag, product, seqid, strand.
-
-    Contig separators (if requested) are inserted into all three gene lists whenever the
-    sequence ID changes, regardless of strand. Unmatched genes are always collected,
-    independently of the --unknown token setting.
+                                    Each dict has keys: locus_tag, product, seqid, strand.
     """
-    all_genes = []
-    plus_genes = []
-    minus_genes = []
+    all_fragments = [[]]
+    plus_fragments = [[]]
+    minus_fragments = [[]]
     unmatched = []
     prev_seqid = None
 
     for lt, seqid, strand, product in entries:
-        # Insert contig boundary token when the sequence ID changes
-        if contig_sep is not None and prev_seqid is not None and seqid != prev_seqid:
-            all_genes.append(contig_sep)
-            plus_genes.append(contig_sep)
-            minus_genes.append(contig_sep)
+        if prev_seqid is not None and seqid != prev_seqid:
+            all_fragments.append([])
+            plus_fragments.append([])
+            minus_fragments.append([])
         prev_seqid = seqid
 
         family = gene_lookup.get(lt)
@@ -169,46 +163,31 @@ def process_genome(entries, gene_lookup, unknown_token, mark_strand, contig_sep)
                 continue  # omit from gene lists but still recorded above
             label = f'{unknown_token}{strand}' if mark_strand else unknown_token
 
-        all_genes.append(label)
+        all_fragments[-1].append(label)
         if strand == '+':
-            plus_genes.append(label)
+            plus_fragments[-1].append(label)
         else:
-            minus_genes.append(label)
+            minus_fragments[-1].append(label)
 
-    return all_genes, plus_genes, minus_genes, unmatched
+    return all_fragments, plus_fragments, minus_fragments, unmatched
 
 
-def reverse_within_contigs(genes, contig_sep):
-    """
-    Reverse gene order within each contig segment independently.
+def reverse_fragments(fragments):
+    """Reverse gene order within each contig fragment independently."""
+    return [list(reversed(fragment)) for fragment in fragments]
 
-    GFF files list all genes in reference (+ strand) coordinate order. For minus strand
-    genes this means they appear 3'→5'. Reversing within each contig corrects this so
-    that genes read 5'→3' along the minus strand, while keeping contigs in their
-    original order.
 
-    If no contig_sep is set the entire list is simply reversed.
-    """
-    if not contig_sep:
-        return list(reversed(genes))
+def write_output_sequences(fh, genome, fragments, split_by_fragment):
+    """Write either one sequence per genome or one sequence per fragment."""
+    if split_by_fragment:
+        for idx, genes in enumerate(fragments, start=1):
+            fh.write(f'>{genome}.{idx}\n')
+            fh.write(','.join(genes) + '\n')
+        return
 
-    # Split into contig segments, reverse each, then rejoin
-    segments = []
-    current = []
-    for gene in genes:
-        if gene == contig_sep:
-            segments.append(current)
-            current = []
-        else:
-            current.append(gene)
-    segments.append(current)
-
-    result = []
-    for i, segment in enumerate(segments):
-        result.extend(reversed(segment))
-        if i < len(segments) - 1:
-            result.append(contig_sep)
-    return result
+    combined = [gene for fragment in fragments for gene in fragment]
+    fh.write(f'>{genome}\n')
+    fh.write(','.join(combined) + '\n')
 
 
 def strand_output_paths(base_output):
@@ -260,9 +239,9 @@ def main():
     parser.add_argument(
         '--contig-sep', metavar='SEP',
         help=(
-            'Token inserted into the output list at every contig/scaffold boundary '
-            'to indicate that adjacent genes are on different genome fragments '
-            '(e.g. "--contig-sep |"). Off by default.'
+            'Enable fragment-level output: each contig/scaffold is written as its own '
+            'sequence entry named "genome.X" (X = fragment number in GFF order). '
+            'Pass any token value (e.g. "--contig-sep |"). Off by default.'
         )
     )
     parser.add_argument(
@@ -303,6 +282,7 @@ def main():
 
     mark_strand = args.strand == 'mark'
     split_strand = args.strand == 'split'
+    split_by_fragment = args.contig_sep is not None
 
     print(f'Parsing presence-absence file: {pa_path}', file=sys.stderr)
     genome_names, gene_lookup = parse_presence_absence(pa_path, args.meta_cols)
@@ -340,21 +320,18 @@ def main():
 
             print(f'Processing {genome} ({gff_path.name})', file=sys.stderr)
             entries = parse_gff_order(gff_path)
-            all_genes, plus_genes, minus_genes, unmatched = process_genome(
-                entries, gene_lookup, args.unknown, mark_strand, args.contig_sep
+            all_fragments, plus_fragments, minus_fragments, unmatched = process_genome(
+                entries, gene_lookup, args.unknown, mark_strand
             )
 
             if args.reverse_minus:
-                minus_genes = reverse_within_contigs(minus_genes, args.contig_sep)
+                minus_fragments = reverse_fragments(minus_fragments)
 
             if split_strand:
-                plus_fh.write(f'>{genome}\n')
-                plus_fh.write(','.join(plus_genes) + '\n')
-                minus_fh.write(f'>{genome}\n')
-                minus_fh.write(','.join(minus_genes) + '\n')
+                write_output_sequences(plus_fh, genome, plus_fragments, split_by_fragment)
+                write_output_sequences(minus_fh, genome, minus_fragments, split_by_fragment)
             else:
-                main_fh.write(f'>{genome}\n')
-                main_fh.write(','.join(all_genes) + '\n')
+                write_output_sequences(main_fh, genome, all_fragments, split_by_fragment)
 
             # Write unmatched genes for this genome
             if unmatched_fh:
