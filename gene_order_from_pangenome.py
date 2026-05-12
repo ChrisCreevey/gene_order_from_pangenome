@@ -173,7 +173,7 @@ def process_genome(entries, gene_lookup, unknown_token, mark_strand):
 
 
 def reverse_fragments(fragments):
-    """Reverse gene order within each contig fragment independently."""
+    """Reverse gene order within each contig fragment independently (including empties)."""
     return [list(reversed(fragment)) for fragment in fragments]
 
 
@@ -237,7 +237,7 @@ def main():
         help='Number of metadata columns before genome columns (default: 14)'
     )
     parser.add_argument(
-        '--contig-sep', nargs='?', const='|', metavar='SEP',
+        '--contig-sep', nargs='?', const=True, metavar='SEP',
         help=(
             'Enable fragment-level output: each contig/scaffold is written as its own '
             'sequence entry named "genome.X" (X = fragment number in GFF order). '
