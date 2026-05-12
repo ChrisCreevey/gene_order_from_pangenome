@@ -284,6 +284,12 @@ def main():
     mark_strand = args.strand == 'mark'
     split_strand = args.strand == 'split'
     fragment_level_output = args.contig_sep is not None
+    if args.contig_sep not in (None, True):
+        print(
+            f'Warning: --contig-sep value "{args.contig_sep}" is ignored; '
+            'fragment-level output is controlled by the flag itself.',
+            file=sys.stderr
+        )
 
     print(f'Parsing presence-absence file: {pa_path}', file=sys.stderr)
     genome_names, gene_lookup = parse_presence_absence(pa_path, args.meta_cols)
