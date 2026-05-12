@@ -237,11 +237,12 @@ def main():
         help='Number of metadata columns before genome columns (default: 14)'
     )
     parser.add_argument(
-        '--contig-sep', metavar='SEP',
+        '--contig-sep', nargs='?', const='|', metavar='SEP',
         help=(
             'Enable fragment-level output: each contig/scaffold is written as its own '
             'sequence entry named "genome.X" (X = fragment number in GFF order). '
-            'Pass any token value (e.g. "--contig-sep |"). Off by default.'
+            'For backward compatibility, an optional SEP value can still be provided '
+            '(e.g. "--contig-sep |"), but it is ignored. Off by default.'
         )
     )
     parser.add_argument(
@@ -282,7 +283,7 @@ def main():
 
     mark_strand = args.strand == 'mark'
     split_strand = args.strand == 'split'
-    split_by_fragment = args.contig_sep is not None
+    fragment_level_output = args.contig_sep is not None
 
     print(f'Parsing presence-absence file: {pa_path}', file=sys.stderr)
     genome_names, gene_lookup = parse_presence_absence(pa_path, args.meta_cols)
@@ -328,10 +329,10 @@ def main():
                 minus_fragments = reverse_fragments(minus_fragments)
 
             if split_strand:
-                write_output_sequences(plus_fh, genome, plus_fragments, split_by_fragment)
-                write_output_sequences(minus_fh, genome, minus_fragments, split_by_fragment)
+                write_output_sequences(plus_fh, genome, plus_fragments, fragment_level_output)
+                write_output_sequences(minus_fh, genome, minus_fragments, fragment_level_output)
             else:
-                write_output_sequences(main_fh, genome, all_fragments, split_by_fragment)
+                write_output_sequences(main_fh, genome, all_fragments, fragment_level_output)
 
             # Write unmatched genes for this genome
             if unmatched_fh:

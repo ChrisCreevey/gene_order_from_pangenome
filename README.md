@@ -84,7 +84,7 @@ Output is written to stdout if `--output` is omitted.
 | `--output` | `-o` | stdout | Output file path. With `--strand split`, used as the base name for `.plus` and `.minus` files |
 | `--unknown` | `-u` | `*` | Token written for CDS features not found in the presence-absence table. Pass `skip` to omit them entirely |
 | `--meta-cols` | `-m` | `14` | Number of metadata columns before the genome columns (default matches standard Roary output) |
-| `--contig-sep` | | *(off)* | Enable fragment-level output: each contig/scaffold is written as its own sequence named `genome.X` (pass any value, e.g. `\|`) |
+| `--contig-sep` | | *(off)* | Enable fragment-level output: each contig/scaffold is written as its own sequence named `genome.X` (optional legacy value accepted and ignored, e.g. `\|`) |
 | `--strand` | | *(off)* | `mark`: append `+` or `-` to each gene-family name. `split`: write separate `.plus` and `.minus` output files |
 | `--reverse-minus` | | *(off)* | Flag (no value required). Reverse minus strand gene order within each contig so genes read 5'→3' along the minus strand (see below) |
 | `--unmatched` | | *(off)* | Path for a TSV report of every CDS in the GFF with no entry in the presence-absence file |
@@ -212,7 +212,7 @@ python gene_order_from_pangenome.py \
 python gene_order_from_pangenome.py \
     -p gene_presence_absence.csv \
     -g gff/ \
-    --contig-sep '|' \
+    --contig-sep \
     -o gene_order.txt
 ```
 
@@ -240,7 +240,7 @@ python gene_order_from_pangenome.py \
 python gene_order_from_pangenome.py \
     -p gene_presence_absence.csv \
     -g gff/ \
-    --contig-sep '|' \
+    --contig-sep \
     --strand split \
     -o gene_order.txt
 ```
